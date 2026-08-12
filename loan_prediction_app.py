@@ -34,6 +34,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
+# Always work relative to THIS file's own folder, regardless of where the
+# app is launched from (terminal, VS Code Run button, double-click, etc.)
+# so 'Loan_Prediction.csv' and the log CSV are always found/written correctly.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 LOG_FILE = 'customer_loan_predictions_log.csv'
 
 # Must match loan_prediction_gui.py's LOG_COLUMNS exactly, so both apps
@@ -123,6 +128,12 @@ def build_model():
 
 MODEL, SCALER, ENCODER, CAT_COLS, ENCODED_COLS, INPUTS, WEIGHTS_DF = build_model()
 
+# The exact mean Credit_History value the scaler was fit on. Feeding this
+# in (instead of 0 or 1) makes its scaled value ~0, so it contributes
+# nothing to the decision — letting the applicant's other features
+# determine the outcome instead of defaulting them into "bad credit".
+CREDIT_HISTORY_NEUTRAL = float(SCALER.mean_[INPUTS.index('Credit_History')])
+
 
 # ----------------------------------------------------------------------
 # 2. PREDICTION + LOGGING
@@ -185,7 +196,10 @@ with st.sidebar:
         coapplicant_income = st.number_input("Coapplicant Income", min_value=0, value=1800, step=100)
         loan_amount = st.number_input("Loan Amount (thousands)", min_value=0, value=128, step=1)
         loan_term = st.number_input("Loan Term (days)", min_value=0, value=360, step=30)
-        credit_history = st.selectbox("Credit History", ["1.0 (Good)", "0.0 (Bad)"])
+        credit_history = st.selectbox(
+            "Credit History",
+            ["1.0 (Good)", "0.0 (Bad)", "No prior credit history"]
+        )
 
         submitted = st.form_submit_button("Predict", use_container_width=True, type="primary")
 
@@ -200,6 +214,13 @@ tab_predict, tab_history = st.tabs(["🔮 Prediction", "📋 History & Log"])
 
 # ---- keep the latest result available across reruns within a session ----
 if submitted:
+    if "1.0" in credit_history:
+        credit_history_value = 1.0
+    elif "0.0" in credit_history:
+        credit_history_value = 0.0
+    else:
+        credit_history_value = CREDIT_HISTORY_NEUTRAL  # neutral — no prior history
+
     customer = {
         'Gender': gender,
         'Married': married,
@@ -210,7 +231,7 @@ if submitted:
         'CoapplicantIncome': float(coapplicant_income),
         'LoanAmount': float(loan_amount),
         'Loan_Amount_Term': float(loan_term),
-        'Credit_History': 1.0 if "1.0" in credit_history else 0.0,
+        'Credit_History': credit_history_value,
         'Property_Area': property_area,
     }
     prediction, proba = predict_customer(customer)
@@ -238,13 +259,20 @@ with tab_predict:
             m2.metric("P(Approved)", f"{proba[1]:.1%}")
             st.progress(float(proba[1]), text="Approval confidence")
 
+            if customer['Credit_History'] == 1.0:
+                ch_label = 'good'
+            elif customer['Credit_History'] == 0.0:
+                ch_label = 'bad'
+            else:
+                ch_label = 'no prior history (neutral)'
+
             st.caption(
                 f"{customer['Gender']}, {customer['Married']} married, "
                 f"{customer['Dependents']} dependents, {customer['Education']}, "
                 f"income {int(customer['ApplicantIncome'])} "
                 f"(+{int(customer['CoapplicantIncome'])} co-applicant), "
                 f"loan {int(customer['LoanAmount'])}k over {int(customer['Loan_Amount_Term'])} days, "
-                f"credit history {'good' if customer['Credit_History']==1.0 else 'bad'}, "
+                f"credit history {ch_label}, "
                 f"{customer['Property_Area']} property."
             )
 
