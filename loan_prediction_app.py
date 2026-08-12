@@ -14,6 +14,12 @@ HOW TO RUN:
    This opens the app in your browser automatically (usually at
    http://localhost:8501).
 
+NOTE ON THE LOG FILE:
+This app writes to 'customer_loan_predictions_log.csv' using the SAME column
+schema as loan_prediction_gui.py (the Tkinter version), so if you use
+both apps in the same project folder, every prediction from either one
+lands in one consistent, combined log.
+
 WANT TO DEPLOY IT ONLINE (free, for your portfolio/CV)?
 - Push this file + Loan_Prediction.csv to a GitHub repo.
 - Go to https://share.streamlit.io, sign in with GitHub, and point it at
@@ -28,13 +34,38 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
-LOG_FILE = 'customer_predictions_log.csv'
+LOG_FILE = 'customer_loan_predictions_log.csv'
+
+# Must match loan_prediction_gui.py's LOG_COLUMNS exactly, so both apps
+# append to a single, consistent log file regardless of which one is used.
+LOG_COLUMNS = [
+    'Timestamp', 'Gender', 'Married', 'Dependents', 'Education',
+    'Self_Employed', 'ApplicantIncome', 'CoapplicantIncome', 'LoanAmount',
+    'Loan_Amount_Term', 'Credit_History', 'Property_Area',
+    'Prediction', 'P_Rejected', 'P_Approved'
+]
 
 st.set_page_config(
     page_title="Loan Approval Predictor",
     page_icon="🏦",
-    layout="centered"
+    layout="wide"
 )
+
+# ----------------------------------------------------------------------
+# LIGHT STYLING — softens the default "generic Streamlit" look
+# ----------------------------------------------------------------------
+st.markdown("""
+    <style>
+        .block-container { padding-top: 2rem; max-width: 1100px; }
+        div[data-testid="stMetric"] {
+            background-color: rgba(120, 120, 120, 0.08);
+            border-radius: 10px;
+            padding: 12px 16px;
+        }
+        section[data-testid="stSidebar"] { min-width: 340px; }
+        h1 { font-size: 1.9rem; }
+    </style>
+""", unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------------
@@ -82,7 +113,6 @@ def build_model():
     model = LogisticRegression(solver='liblinear', class_weight='balanced')
     model.fit(train_inputs_scaled, train_target)
 
-    # feature weights for the "what's driving this?" panel
     weights_df = pd.DataFrame({
         'Feature': inputs,
         'Weight': model.coef_[0]
@@ -95,7 +125,7 @@ MODEL, SCALER, ENCODER, CAT_COLS, ENCODED_COLS, INPUTS, WEIGHTS_DF = build_model
 
 
 # ----------------------------------------------------------------------
-# 2. PREDICTION FUNCTION
+# 2. PREDICTION + LOGGING
 # ----------------------------------------------------------------------
 def predict_customer(customer_dict):
     df = pd.DataFrame({k: [v] for k, v in customer_dict.items()})
@@ -109,28 +139,39 @@ def predict_customer(customer_dict):
 
 
 def log_prediction(customer_dict, prediction, proba):
+    """Append this prediction using the SAME column schema as the Tkinter
+    app's log_prediction(), so both apps share one consistent CSV."""
     file_exists = os.path.isfile(LOG_FILE)
+
     row = {
         'Timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-        **customer_dict,
+        'Gender': customer_dict['Gender'],
+        'Married': customer_dict['Married'],
+        'Dependents': customer_dict['Dependents'],
+        'Education': customer_dict['Education'],
+        'Self_Employed': customer_dict['Self_Employed'],
+        'ApplicantIncome': customer_dict['ApplicantIncome'],
+        'CoapplicantIncome': customer_dict['CoapplicantIncome'],
+        'LoanAmount': customer_dict['LoanAmount'],
+        'Loan_Amount_Term': customer_dict['Loan_Amount_Term'],
+        'Credit_History': customer_dict['Credit_History'],
+        'Property_Area': customer_dict['Property_Area'],
         'Prediction': 'Approved' if prediction == 1 else 'Rejected',
-        'P_Rejected': round(proba[0], 4),
-        'P_Approved': round(proba[1], 4),
+        'P_Rejected': round(float(proba[0]), 4),
+        'P_Approved': round(float(proba[1]), 4),
     }
-    row_df = pd.DataFrame([row])
+
+    row_df = pd.DataFrame([row], columns=LOG_COLUMNS)
     row_df.to_csv(LOG_FILE, mode='a', header=not file_exists, index=False)
 
 
 # ----------------------------------------------------------------------
-# 3. APP LAYOUT
+# 3. SIDEBAR — the input form lives here, freeing up the main area
 # ----------------------------------------------------------------------
-st.title("🏦 Loan Approval Predictor")
-st.caption("Enter a customer's details to get a live prediction from the trained logistic regression model.")
+with st.sidebar:
+    st.header("New Customer")
 
-with st.form("customer_form"):
-    col1, col2 = st.columns(2)
-
-    with col1:
+    with st.form("customer_form"):
         gender = st.selectbox("Gender", ["Male", "Female"])
         married = st.selectbox("Married", ["Yes", "No"])
         dependents = st.selectbox("Dependents", ["0", "1", "2", "3+"])
@@ -138,15 +179,26 @@ with st.form("customer_form"):
         self_employed = st.selectbox("Self Employed", ["No", "Yes"])
         property_area = st.selectbox("Property Area", ["Semiurban", "Urban", "Rural"])
 
-    with col2:
+        st.divider()
+
         applicant_income = st.number_input("Applicant Income", min_value=0, value=5000, step=100)
         coapplicant_income = st.number_input("Coapplicant Income", min_value=0, value=1800, step=100)
         loan_amount = st.number_input("Loan Amount (thousands)", min_value=0, value=128, step=1)
         loan_term = st.number_input("Loan Term (days)", min_value=0, value=360, step=30)
         credit_history = st.selectbox("Credit History", ["1.0 (Good)", "0.0 (Bad)"])
 
-    submitted = st.form_submit_button("Predict", use_container_width=True)
+        submitted = st.form_submit_button("Predict", use_container_width=True, type="primary")
 
+
+# ----------------------------------------------------------------------
+# 4. MAIN AREA — tabs instead of one long scrolling page
+# ----------------------------------------------------------------------
+st.title("🏦 Loan Approval Predictor")
+st.caption("Fill in the customer's details on the left, then click Predict.")
+
+tab_predict, tab_history = st.tabs(["🔮 Prediction", "📋 History & Log"])
+
+# ---- keep the latest result available across reruns within a session ----
 if submitted:
     customer = {
         'Gender': gender,
@@ -161,55 +213,75 @@ if submitted:
         'Credit_History': 1.0 if "1.0" in credit_history else 0.0,
         'Property_Area': property_area,
     }
-
     prediction, proba = predict_customer(customer)
     log_prediction(customer, prediction, proba)
+    st.session_state['last_customer'] = customer
+    st.session_state['last_prediction'] = prediction
+    st.session_state['last_proba'] = proba
 
-    st.divider()
+with tab_predict:
+    if 'last_prediction' in st.session_state:
+        prediction = st.session_state['last_prediction']
+        proba = st.session_state['last_proba']
+        customer = st.session_state['last_customer']
 
-    if prediction == 1:
-        st.success(f"### ✅ Predicted: APPROVED")
+        left, right = st.columns([1.1, 1], gap="large")
+
+        with left:
+            if prediction == 1:
+                st.success("### ✅ Predicted: APPROVED")
+            else:
+                st.error("### ❌ Predicted: REJECTED")
+
+            m1, m2 = st.columns(2)
+            m1.metric("P(Rejected)", f"{proba[0]:.1%}")
+            m2.metric("P(Approved)", f"{proba[1]:.1%}")
+            st.progress(float(proba[1]), text="Approval confidence")
+
+            st.caption(
+                f"{customer['Gender']}, {customer['Married']} married, "
+                f"{customer['Dependents']} dependents, {customer['Education']}, "
+                f"income {int(customer['ApplicantIncome'])} "
+                f"(+{int(customer['CoapplicantIncome'])} co-applicant), "
+                f"loan {int(customer['LoanAmount'])}k over {int(customer['Loan_Amount_Term'])} days, "
+                f"credit history {'good' if customer['Credit_History']==1.0 else 'bad'}, "
+                f"{customer['Property_Area']} property."
+            )
+
+        with right:
+            st.markdown("**What's driving this prediction?**")
+            st.dataframe(
+                WEIGHTS_DF.head(6).style.format({'Weight': '{:.3f}'}),
+                hide_index=True,
+                use_container_width=True
+            )
+            st.caption("Positive weights push toward Approved, negative toward Rejected.")
     else:
-        st.error(f"### ❌ Predicted: REJECTED")
+        st.info("⬅️ Fill in the customer's details in the sidebar and click **Predict** to see a result here.")
 
-    p_col1, p_col2 = st.columns(2)
-    p_col1.metric("P(Rejected)", f"{proba[0]:.1%}")
-    p_col2.metric("P(Approved)", f"{proba[1]:.1%}")
+with tab_history:
+    if os.path.isfile(LOG_FILE):
+        log_df = pd.read_csv(LOG_FILE)
+        total = len(log_df)
+        approved = (log_df['Prediction'] == 'Approved').sum()
+        rejected = (log_df['Prediction'] == 'Rejected').sum()
 
-    st.progress(float(proba[1]), text="Approval confidence")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total logged", total)
+        m2.metric("Approved", approved)
+        m3.metric("Rejected", rejected)
 
-    with st.expander("What's driving this prediction? (top model weights)"):
         st.dataframe(
-            WEIGHTS_DF.head(6).style.format({'Weight': '{:.3f}'}),
+            log_df.sort_values('Timestamp', ascending=False),
             hide_index=True,
             use_container_width=True
         )
-        st.caption("Positive weights push toward Approved, negative weights push toward Rejected.")
 
-# ----------------------------------------------------------------------
-# 4. LOG HISTORY VIEW
-# ----------------------------------------------------------------------
-st.divider()
-st.subheader("📋 Prediction History")
-
-if os.path.isfile(LOG_FILE):
-    log_df = pd.read_csv(LOG_FILE)
-    total = len(log_df)
-    approved = (log_df['Prediction'] == 'Approved').sum()
-    rejected = (log_df['Prediction'] == 'Rejected').sum()
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total logged", total)
-    m2.metric("Approved", approved)
-    m3.metric("Rejected", rejected)
-
-    st.dataframe(log_df.sort_values('Timestamp', ascending=False), hide_index=True, use_container_width=True)
-
-    st.download_button(
-        "Download full log as CSV",
-        data=log_df.to_csv(index=False),
-        file_name="customer_predictions_log.csv",
-        mime="text/csv"
-    )
-else:
-    st.info("No predictions logged yet — submit the form above to get started.")
+        st.download_button(
+            "Download full log as CSV",
+            data=log_df.to_csv(index=False),
+            file_name="customer_loan_predictions_log.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("No predictions logged yet — submit the form in the sidebar to get started.")
