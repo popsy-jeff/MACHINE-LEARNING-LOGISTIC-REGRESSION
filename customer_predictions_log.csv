@@ -1,0 +1,2 @@
+Timestamp,Gender,Married,Dependents,Education,Self_Employed,ApplicantIncome,CoapplicantIncome,LoanAmount,Loan_Amount_Term,Credit_History,Property_Area,Prediction,P_Rejected,P_Approved
+2026-08-12 12:13:05,Male,Yes,2,Graduate,Yes,5000.0,180000.0,128.0,365.0,1.0,Semiurban,Approved,0.0,1.0
