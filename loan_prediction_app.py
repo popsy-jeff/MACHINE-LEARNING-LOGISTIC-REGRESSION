@@ -121,15 +121,67 @@ st.markdown("""
         }
 
         /* narrow sidebar since it's navigation-only now */
-        section[data-testid="stSidebar"] { min-width: 230px; max-width: 260px; }
+        section[data-testid="stSidebar"] { min-width: 240px; max-width: 270px; }
         section[data-testid="stSidebar"] > div { background: #0B100E; }
+        section[data-testid="stSidebar"] .block-container { padding-top: 0.5rem; }
+
         section[data-testid="stSidebar"] .stRadio > label { display: none; }
-        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
-            padding: 8px 10px; border-radius: 8px; margin-bottom: 2px;
-            transition: background 0.12s ease;
+
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
+            display: flex; flex-direction: column; gap: 6px;
         }
+
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+            position: relative;
+            padding: 11px 14px 11px 18px;
+            border-radius: 10px;
+            margin-bottom: 0;
+            background: transparent;
+            border: 1px solid transparent;
+            cursor: pointer;
+            overflow: hidden;
+            transition: background 0.18s ease, border-color 0.18s ease,
+                        transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        /* left accent bar, hidden by default, slides in on hover/active */
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label::before {
+            content: "";
+            position: absolute; left: 0; top: 50%;
+            width: 3px; height: 0%;
+            background: var(--brand-primary);
+            border-radius: 0 3px 3px 0;
+            transform: translateY(-50%);
+            transition: height 0.2s ease;
+        }
+
         section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
             background: var(--brand-primary-light);
+            border-color: var(--brand-border);
+            transform: translateX(3px);
+        }
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover::before {
+            height: 55%;
+        }
+
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:has(input:checked) {
+            background: var(--brand-primary-light);
+            border-color: var(--brand-border);
+            box-shadow: 0 2px 10px rgba(47, 191, 143, 0.15);
+        }
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:has(input:checked)::before {
+            height: 70%;
+        }
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:has(input:checked) p {
+            color: var(--brand-primary);
+            font-weight: 600;
+        }
+
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
+            font-size: 1.05rem;
+            font-weight: 500;
+            transition: color 0.18s ease;
+            margin: 0;
         }
 
         @keyframes fadeSlideIn {
@@ -159,7 +211,9 @@ st.markdown("""
         .nav-brand {
             display: flex; align-items: center; gap: 8px;
             font-weight: 700; color: var(--brand-primary);
-            font-size: 1.1rem; padding: 6px 4px 14px 4px;
+            font-size: 1.15rem; padding: 10px 6px 16px 6px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--brand-border);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -214,10 +268,43 @@ def build_model():
         'Weight': model.coef_[0]
     }).sort_values('Weight', key=abs, ascending=False)
 
-    return model, scaler, encoder, categorical_columns, encoded_cols, inputs, weights_df
+    # ---- test-set performance, for the Model Performance page ----
+    test_inputs = test_df[inputs].copy()
+    test_target = test_df[target].copy()
+    test_inputs_scaled = scaler.transform(test_inputs)
+    test_preds = model.predict(test_inputs_scaled)
+
+    from sklearn.metrics import (
+        accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+    )
+
+    accuracy = accuracy_score(test_target, test_preds)
+    precision = precision_score(test_target, test_preds, zero_division=0)
+    recall = recall_score(test_target, test_preds, zero_division=0)
+    f1 = f1_score(test_target, test_preds, zero_division=0)
+    cm = confusion_matrix(test_target, test_preds)
+
+    majority_class = test_target.mode()[0]
+    majority_baseline_acc = (test_target == majority_class).mean()
+    rng = np.random.RandomState(42)
+    random_preds = rng.randint(0, 2, size=len(test_target))
+    random_baseline_acc = accuracy_score(test_target, random_preds)
+
+    performance = {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'confusion_matrix': cm,
+        'test_size': len(test_target),
+        'majority_baseline_acc': majority_baseline_acc,
+        'random_baseline_acc': random_baseline_acc,
+    }
+
+    return model, scaler, encoder, categorical_columns, encoded_cols, inputs, weights_df, performance
 
 
-MODEL, SCALER, ENCODER, CAT_COLS, ENCODED_COLS, INPUTS, WEIGHTS_DF = build_model()
+MODEL, SCALER, ENCODER, CAT_COLS, ENCODED_COLS, INPUTS, WEIGHTS_DF, PERFORMANCE = build_model()
 
 CREDIT_HISTORY_NEUTRAL = float(SCALER.mean_[INPUTS.index('Credit_History')])
 
@@ -364,7 +451,10 @@ def risk_tier(p_approved: float):
 PAGES = {
     "Prediction": "insights",
     "Loan Calculator": "calculate",
+    "Batch Prediction": "upload_file",
+    "Model Performance": "monitoring",
     "History & Log": "history",
+    "About": "info",
 }
 
 with st.sidebar:
@@ -380,12 +470,6 @@ with st.sidebar:
         "Navigate",
         list(PAGES.keys()),
         label_visibility="collapsed",
-    )
-
-    st.divider()
-    st.caption(
-        f"{icon('database', 14, valign='text-bottom')} Model trained on "
-        f"Loan_Prediction.csv &nbsp;•&nbsp; Logistic Regression"
     )
 
 
@@ -850,6 +934,202 @@ elif page == "Loan Calculator":
 # ----------------------------------------------------------------------
 # 8. PAGE: HISTORY & LOG
 # ----------------------------------------------------------------------
+elif page == "Batch Prediction":
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('upload_file', 20)} Batch Prediction</div>",
+        unsafe_allow_html=True
+    )
+    st.caption(
+        "Upload a CSV of multiple applicants to get predictions for all of them at once. "
+        "The file needs the same columns as the single-applicant form."
+    )
+
+    required_cols = [
+        'Gender', 'Married', 'Dependents', 'Education', 'Self_Employed',
+        'ApplicantIncome', 'CoapplicantIncome', 'LoanAmount',
+        'Loan_Amount_Term', 'Credit_History', 'Property_Area',
+    ]
+
+    with st.expander("Expected CSV columns"):
+        st.code(", ".join(required_cols))
+        st.caption(
+            "Credit_History should be 1.0, 0.0, or blank/NaN for 'no prior history' "
+            "(treated the same as the neutral option in the single-applicant form)."
+        )
+
+    uploaded_file = st.file_uploader("Upload applicants CSV", type=["csv"])
+
+    if uploaded_file is not None:
+        try:
+            batch_df = pd.read_csv(uploaded_file)
+        except Exception as e:
+            st.markdown(
+                f"<div class='info-card' style='border-color:var(--brand-reject);'>"
+                f"{icon('error', 18, 'var(--brand-reject)')} Couldn't read that file: {e}</div>",
+                unsafe_allow_html=True
+            )
+            batch_df = None
+
+        if batch_df is not None:
+            missing = [c for c in required_cols if c not in batch_df.columns]
+            if missing:
+                st.markdown(
+                    f"<div class='info-card' style='border-color:var(--brand-reject);'>"
+                    f"{icon('warning', 18, 'var(--brand-reject)')} Missing required column(s): "
+                    f"<b>{', '.join(missing)}</b></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.write(f"Loaded **{len(batch_df)}** applicants.")
+                st.dataframe(batch_df.head(), hide_index=True, use_container_width=True)
+
+                if st.button("Run batch prediction", type="primary"):
+                    results = []
+                    errors = 0
+                    for _, row in batch_df.iterrows():
+                        try:
+                            credit_history_value = row['Credit_History']
+                            if pd.isna(credit_history_value):
+                                credit_history_value = CREDIT_HISTORY_NEUTRAL
+
+                            customer = {
+                                'Gender': row['Gender'],
+                                'Married': row['Married'],
+                                'Dependents': str(row['Dependents']).replace('+', ''),
+                                'Education': row['Education'],
+                                'Self_Employed': row['Self_Employed'],
+                                'ApplicantIncome': float(row['ApplicantIncome']),
+                                'CoapplicantIncome': float(row['CoapplicantIncome']),
+                                'LoanAmount': float(row['LoanAmount']),
+                                'Loan_Amount_Term': float(row['Loan_Amount_Term']),
+                                'Credit_History': float(credit_history_value),
+                                'Property_Area': row['Property_Area'],
+                            }
+                            prediction, proba, _ = predict_customer(customer)
+                            results.append({
+                                **row.to_dict(),
+                                'Prediction': 'Approved' if prediction == 1 else 'Rejected',
+                                'P_Rejected': round(float(proba[0]), 4),
+                                'P_Approved': round(float(proba[1]), 4),
+                            })
+                        except Exception:
+                            errors += 1
+                            results.append({
+                                **row.to_dict(),
+                                'Prediction': 'Error',
+                                'P_Rejected': None,
+                                'P_Approved': None,
+                            })
+
+                    results_df = pd.DataFrame(results)
+                    st.session_state['batch_results'] = results_df
+                    if errors:
+                        st.markdown(
+                            f"<div class='info-card' style='border-color:var(--brand-reject);'>"
+                            f"{icon('warning', 18, 'var(--brand-reject)')} {errors} row(s) "
+                            f"couldn't be scored (bad or missing values) and are marked 'Error'.</div>",
+                            unsafe_allow_html=True
+                        )
+
+    if 'batch_results' in st.session_state:
+        st.divider()
+        results_df = st.session_state['batch_results']
+        scored = results_df[results_df['Prediction'] != 'Error']
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Scored", len(scored))
+        m2.metric("Approved", (scored['Prediction'] == 'Approved').sum())
+        m3.metric("Rejected", (scored['Prediction'] == 'Rejected').sum())
+
+        st.dataframe(results_df, hide_index=True, use_container_width=True)
+
+        st.download_button(
+            "Download results as CSV",
+            data=results_df.to_csv(index=False),
+            file_name="batch_prediction_results.csv",
+            mime="text/csv",
+            type="primary",
+        )
+
+
+# ----------------------------------------------------------------------
+# 9. PAGE: MODEL PERFORMANCE
+# ----------------------------------------------------------------------
+elif page == "Model Performance":
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('monitoring', 20)} Model Performance</div>",
+        unsafe_allow_html=True
+    )
+    st.caption(
+        f"Evaluated on a held-out test split ({PERFORMANCE['test_size']} applicants) "
+        f"that the model never saw during training."
+    )
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Accuracy", f"{PERFORMANCE['accuracy']:.1%}")
+    m2.metric("Precision", f"{PERFORMANCE['precision']:.1%}")
+    m3.metric("Recall", f"{PERFORMANCE['recall']:.1%}")
+    m4.metric("F1 Score", f"{PERFORMANCE['f1']:.1%}")
+
+    st.caption(
+        "Precision/recall/F1 are computed for the **Approved (Y)** class. "
+        "Precision: of applicants predicted Approved, how many actually were. "
+        "Recall: of applicants who were actually Approved, how many the model caught."
+    )
+
+    st.write("")
+    perf_col1, perf_col2 = st.columns([1, 1.2], gap="large")
+
+    with perf_col1:
+        st.markdown(
+            f"<div class='section-label'>{icon('grid_view', 18)} Confusion Matrix</div>",
+            unsafe_allow_html=True
+        )
+        cm = PERFORMANCE['confusion_matrix']
+        cm_df = pd.DataFrame(
+            cm,
+            index=["Actual: Rejected", "Actual: Approved"],
+            columns=["Predicted: Rejected", "Predicted: Approved"]
+        )
+        st.dataframe(cm_df, use_container_width=True)
+
+    with perf_col2:
+        st.markdown(
+            f"<div class='section-label'>{icon('compare_arrows', 18)} Baseline Comparisons</div>",
+            unsafe_allow_html=True
+        )
+        baseline_df = pd.DataFrame({
+            "Approach": ["Random guess", "Always predict majority class", "This model"],
+            "Accuracy": [
+                f"{PERFORMANCE['random_baseline_acc']:.1%}",
+                f"{PERFORMANCE['majority_baseline_acc']:.1%}",
+                f"{PERFORMANCE['accuracy']:.1%}",
+            ],
+        })
+        st.dataframe(baseline_df, hide_index=True, use_container_width=True)
+        st.caption(
+            "The model should clear both baselines by a meaningful margin — beating the "
+            "majority-class baseline especially matters on imbalanced datasets like this "
+            "one, where most historical loans were Approved."
+        )
+
+    st.divider()
+
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('insights', 20)} Global Feature Weights</div>",
+        unsafe_allow_html=True
+    )
+    st.caption("Full ranking of every feature's weight in the trained logistic regression model.")
+    st.dataframe(
+        WEIGHTS_DF.style.format({'Weight': '{:.3f}'}),
+        hide_index=True,
+        use_container_width=True
+    )
+
+
 elif page == "History & Log":
     st.markdown(
         f"<div class='section-label' style='font-size:1.05rem;'>"
@@ -887,3 +1167,68 @@ elif page == "History & Log":
             f"</div>",
             unsafe_allow_html=True
         )
+
+
+# ----------------------------------------------------------------------
+# 10. PAGE: ABOUT
+# ----------------------------------------------------------------------
+elif page == "About":
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('info', 20)} About This App</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f"<div class='info-card'>"
+        f"{icon('school', 16)} <b>This is an academic / portfolio project, not a real "
+        f"lending decision tool.</b> Predictions and loan terms shown here should not "
+        f"be used to make actual credit or financial decisions."
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('model_training', 18)} "
+        f"The Model</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "A **logistic regression** classifier trained on `Loan_Prediction.csv`, predicting "
+        "whether a historical loan application was Approved or Rejected based on applicant "
+        "demographics, income, loan details, and credit history. Categorical features are "
+        "one-hot encoded and numeric features are standardized before fitting; the model "
+        "uses `class_weight='balanced'` to account for class imbalance in the training data. "
+        "See the **Model Performance** page for accuracy, precision/recall, and baseline "
+        "comparisons on a held-out test split."
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('dataset', 18)} "
+        f"The Dataset</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "A standard public loan-eligibility dataset with applicant fields such as gender, "
+        "marital status, dependents, education, employment, income, loan amount and term, "
+        "credit history, and property area. It's a small, historical dataset — patterns "
+        "learned from it reflect that specific data and are not a general statement about "
+        "who should or shouldn't receive credit."
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('warning', 18)} "
+        f"Limitations</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "- Trained on a small, dated, and geographically limited sample — it will not "
+        "generalize reliably to other populations or lending contexts.\n"
+        "- Sensitive attributes like gender and marital status are used as model inputs, "
+        "which would raise fair-lending concerns in any real deployment.\n"
+        "- The loan structuring calculator uses simple/flat interest rules adapted "
+        "from a separate SACCO-style system (FEDHA-SYSTEM) purely for demonstration — "
+        "it is not tied to the prediction model's output.\n"
+        "- No calibration or fairness auditing has been performed beyond the metrics "
+        "shown on the Model Performance page."
+    )
