@@ -7,8 +7,8 @@ plus a loan structuring calculator (interest, repayment schedule) adapted
 from the loan business rules in your FEDHA-SYSTEM project.
 
 HOW TO RUN:
-1. Install streamlit once (if you don't already have it):
-       pip install streamlit
+1. Install streamlit and plotly once (if you don't already have them):
+       pip install streamlit plotly
 2. Place this file in the SAME FOLDER as 'Loan_Prediction.csv'
    (your LOGISTIC REGRESSION project folder).
 3. From that folder, run:
@@ -34,6 +34,7 @@ import os
 import pandas as pd
 import numpy as np
 import streamlit as st
+import plotly.graph_objects as go
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
@@ -453,6 +454,7 @@ PAGES = {
     "Loan Calculator": "calculate",
     "Batch Prediction": "upload_file",
     "Model Performance": "monitoring",
+    "Model Insights": "explore",
     "History & Log": "history",
     "About": "info",
 }
@@ -930,9 +932,8 @@ elif page == "Loan Calculator":
         )
 
 
-
 # ----------------------------------------------------------------------
-# 8. PAGE: HISTORY & LOG
+# 8. PAGE: BATCH PREDICTION
 # ----------------------------------------------------------------------
 elif page == "Batch Prediction":
     st.markdown(
@@ -1130,105 +1131,138 @@ elif page == "Model Performance":
     )
 
 
-elif page == "History & Log":
+# ----------------------------------------------------------------------
+# 10. PAGE: MODEL INSIGHTS — interactive sigmoid curve explorer
+# ----------------------------------------------------------------------
+elif page == "Model Insights":
     st.markdown(
         f"<div class='section-label' style='font-size:1.05rem;'>"
-        f"{icon('history', 20)} Prediction History</div>",
+        f"{icon('insights', 20)} Sigmoid Curve Explorer</div>",
         unsafe_allow_html=True
     )
-
-    if os.path.isfile(LOG_FILE):
-        log_df = pd.read_csv(LOG_FILE)
-        total = len(log_df)
-        approved = (log_df['Prediction'] == 'Approved').sum()
-        rejected = (log_df['Prediction'] == 'Rejected').sum()
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total logged", total)
-        m2.metric("Approved", approved)
-        m3.metric("Rejected", rejected)
-
-        st.dataframe(
-            log_df.sort_values('Timestamp', ascending=False),
-            hide_index=True,
-            use_container_width=True
-        )
-
-        st.download_button(
-            "Download full log as CSV",
-            data=log_df.to_csv(index=False),
-            file_name="customer_loan_predictions_log.csv",
-            mime="text/csv"
-        )
-    else:
-        st.markdown(
-            f"<div class='info-card'>{icon('info', 16)} "
-            f"No predictions logged yet — submit the form on the Prediction page."
-            f"</div>",
-            unsafe_allow_html=True
-        )
-
-
-# ----------------------------------------------------------------------
-# 10. PAGE: ABOUT
-# ----------------------------------------------------------------------
-elif page == "About":
-    st.markdown(
-        f"<div class='section-label' style='font-size:1.05rem;'>"
-        f"{icon('info', 20)} About This App</div>",
-        unsafe_allow_html=True
+    st.caption(
+        "See how the model's fitted coefficients shape prediction probability. "
+        "Sliders default to the actual trained model — drag them to explore "
+        "what-if scenarios."
     )
 
+    default_feature_idx = INPUTS.index('Credit_History') if 'Credit_History' in INPUTS else 0
+    feature_choice = st.selectbox("Feature to explore", INPUTS, index=default_feature_idx)
+    feature_idx = INPUTS.index(feature_choice)
+
+    default_beta0 = float(MODEL.intercept_[0])
+    default_beta1 = float(MODEL.coef_[0][feature_idx])
+
+    # Reset button sets a session_state override BEFORE the sliders are
+    # instantiated, which is the correct way to change a widget's value
+    # programmatically in Streamlit (mutating st.session_state after the
+    # widget exists raises an exception).
+    reset_key_b0 = f"beta0_{feature_idx}"
+    reset_key_b1 = f"beta1_{feature_idx}"
+
+    top_l, top_r = st.columns([3, 1])
+    with top_r:
+        st.write("")
+        if st.button("Reset to fitted values", use_container_width=True):
+            st.session_state[reset_key_b0] = default_beta0
+            st.session_state[reset_key_b1] = default_beta1
+            st.rerun()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        beta0 = st.slider(
+            "Intercept (β₀)", -10.0, 10.0,
+            st.session_state.get(reset_key_b0, default_beta0), 0.1,
+            key=reset_key_b0
+        )
+    with col2:
+        beta1 = st.slider(
+            f"Coefficient (β₁) — {feature_choice}", -5.0, 5.0,
+            st.session_state.get(reset_key_b1, default_beta1), 0.1,
+            key=reset_key_b1
+        )
+
+    x = np.linspace(-4, 4, 300)  # standardized feature range (~±4 SD)
+    z = beta0 + beta1 * x
+    y = 1 / (1 + np.exp(-z))
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=x, y=y, mode='lines', name='Sigmoid',
+        line=dict(width=3, color='#2FBF8F')
+    ))
+    fig.add_hline(y=0.5, line_dash="dash", line_color="gray",
+                  annotation_text="Decision threshold (0.5)")
+    fig.update_layout(
+        title=f"Predicted Approval Probability vs. {feature_choice} (standardized)",
+        xaxis_title=f"{feature_choice} (standardized value)",
+        yaxis_title="P(Approved)",
+        yaxis_range=[0, 1],
+        height=450,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font_color='#EAEFEC'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    is_default = (abs(beta0 - default_beta0) < 1e-6) and (abs(beta1 - default_beta1) < 1e-6)
     st.markdown(
         f"<div class='info-card'>"
-        f"{icon('school', 16)} <b>This is an academic / portfolio project, not a real "
-        f"lending decision tool.</b> Predictions and loan terms shown here should not "
-        f"be used to make actual credit or financial decisions."
+        f"{icon('functions', 16)} Current: β₀ = <b>{beta0:.3f}</b>, β₁ = <b>{beta1:.3f}</b> "
+        f"{'(actual fitted model values)' if is_default else '(what-if, not the fitted model)'}<br><br>"
+        f"Steeper curve (higher |β₁|) → the model is more decisive as {feature_choice} changes. "
+        f"Shifting β₀ moves where the 50% approval probability falls."
         f"</div>",
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        f"<div class='section-label' style='margin-top:14px;'>{icon('model_training', 18)} "
-        f"The Model</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "A **logistic regression** classifier trained on `Loan_Prediction.csv`, predicting "
-        "whether a historical loan application was Approved or Rejected based on applicant "
-        "demographics, income, loan details, and credit history. Categorical features are "
-        "one-hot encoded and numeric features are standardized before fitting; the model "
-        "uses `class_weight='balanced'` to account for class imbalance in the training data. "
-        "See the **Model Performance** page for accuracy, precision/recall, and baseline "
-        "comparisons on a held-out test split."
-    )
+    with st.expander("Model's actual fitted values for this feature"):
+        st.write(f"Fitted β₀ (intercept): `{default_beta0:.4f}`")
+        st.write(f"Fitted β₁ for {feature_choice}: `{default_beta1:.4f}`")
+
+    st.divider()
 
     st.markdown(
-        f"<div class='section-label' style='margin-top:14px;'>{icon('dataset', 18)} "
-        f"The Dataset</div>",
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('bar_chart', 20)} Credit History: Approval Probability by State</div>",
         unsafe_allow_html=True
     )
-    st.markdown(
-        "A standard public loan-eligibility dataset with applicant fields such as gender, "
-        "marital status, dependents, education, employment, income, loan amount and term, "
-        "credit history, and property area. It's a small, historical dataset — patterns "
-        "learned from it reflect that specific data and are not a general statement about "
-        "who should or shouldn't receive credit."
+    st.caption(
+        "Since Credit_History is really a discrete good/bad/unknown flag rather than a "
+        "continuous value, this view is more directly interpretable than the curve above: "
+        "it shows the model's actual predicted probability for each state, holding every "
+        "other feature at its average (mean-scaled) value."
     )
 
-    st.markdown(
-        f"<div class='section-label' style='margin-top:14px;'>{icon('warning', 18)} "
-        f"Limitations</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "- Trained on a small, dated, and geographically limited sample — it will not "
-        "generalize reliably to other populations or lending contexts.\n"
-        "- Sensitive attributes like gender and marital status are used as model inputs, "
-        "which would raise fair-lending concerns in any real deployment.\n"
-        "- The loan structuring calculator uses simple/flat interest rules adapted "
-        "from a separate SACCO-style system (FEDHA-SYSTEM) purely for demonstration — "
-        "it is not tied to the prediction model's output.\n"
-        "- No calibration or fairness auditing has been performed beyond the metrics "
-        "shown on the Model Performance page."
-    )
+    if 'Credit_History' in INPUTS:
+        ch_idx = INPUTS.index('Credit_History')
+        ch_mean = float(SCALER.mean_[ch_idx])
+        ch_scale = float(SCALER.scale_[ch_idx])
+
+        states = {
+            "Bad (0.0)": 0.0,
+            "No history (neutral)": ch_mean,
+            "Good (1.0)": 1.0,
+        }
+
+        bar_rows = []
+        for label, raw_value in states.items():
+            z_all = 0.0
+            for i, feat in enumerate(INPUTS):
+                if i == ch_idx:
+                    scaled_val = (raw_value - ch_mean) / ch_scale if ch_scale != 0 else 0.0
+                else:
+                    scaled_val = 0.0  # mean-centered => 0 in standardized space
+                z_all += MODEL.coef_[0][i] * scaled_val
+            z_all += float(MODEL.intercept_[0])
+            p_approved = 1 / (1 + np.exp(-z_all))
+            bar_rows.append({"State": label, "P(Approved)": p_approved})
+
+        bar_df = pd.DataFrame(bar_rows).set_index("State")
+        st.bar_chart(bar_df, color="#2FBF8F", height=280)
+        st.caption(
+            "All other features held at their training-set average, so this isolates the "
+            "effect of Credit_History alone."
+        )
+    else:
+        st.info("Credit_History is not present in this model's feature set.")
