@@ -71,6 +71,41 @@ def icon(name: str, size: int = 20, color: str = "currentColor", valign: str = "
     )
 
 
+def stat_card_html(label: str, value: str, icon_name: str, color_var: str) -> str:
+    """Small colour-coded stat block used on the Dashboard and other summary rows."""
+    return (
+        f"<div class='stat-card' style='border-color:{color_var};'>"
+        f"{icon(icon_name, 22, color_var)}"
+        f"<span class='stat-value' style='color:{color_var};'>{value}</span>"
+        f"<span class='stat-label'>{label}</span>"
+        f"</div>"
+    )
+
+
+def nav_card_html(title: str, desc: str, icon_name: str, color_var: str, bg_var: str) -> str:
+    """Colour-coded description card used above a page-jump button."""
+    return (
+        f"<div class='nav-card' style='border-color:{color_var}; background:{bg_var};'>"
+        f"<div class='nav-card-title'>{icon(icon_name, 18, color_var)} &nbsp;{title}</div>"
+        f"<div class='nav-card-desc'>{desc}</div>"
+        f"</div>"
+    )
+
+
+def goto(page_name: str):
+    """Programmatically switch the active sidebar page and rerun.
+
+    We can't set st.session_state['nav_page'] directly here because the
+    sidebar radio (key='nav_page') has already been instantiated earlier
+    in this run — Streamlit disallows modifying a widget's own key after
+    it's been created. Instead we stash the request in a plain variable
+    and apply it to 'nav_page' at the very top of the next run, before
+    the radio widget is (re)created.
+    """
+    st.session_state['nav_page_request'] = page_name
+    st.rerun()
+
+
 # ----------------------------------------------------------------------
 # GLOBAL STYLE
 # ----------------------------------------------------------------------
@@ -84,16 +119,73 @@ st.markdown("""
         :root {
             --brand-primary:  #2FBF8F;   /* brighter teal — pops on dark bg */
             --brand-primary-light: rgba(47, 191, 143, 0.14);
-            --brand-accent:   #E0B75C;
+            --brand-accent:   #E0B75C;   /* yellow/gold */
+            --brand-accent-light: rgba(224, 183, 92, 0.12);
             --brand-approve:  #3FD08A;
-            --brand-reject:   #F2685C;
+            --brand-reject:   #F2685C;   /* red */
+            --brand-reject-light: rgba(242, 104, 92, 0.10);
+            --brand-purple:   #A78BFA;   /* purple */
+            --brand-purple-light: rgba(167, 139, 250, 0.12);
             --brand-bg-card:  rgba(47, 191, 143, 0.07);
             --brand-border:   rgba(47, 191, 143, 0.22);
             --brand-text:     #EAEFEC;
         }
 
+        /* Colour-coded variants of .info-card, used to give different
+           sections of the app a distinct visual identity (Dashboard
+           stat cards, quick facts, callouts) instead of everything
+           being the same teal tone. */
+        .info-card-red {
+            border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
+            background: var(--brand-reject-light); border: 1px solid var(--brand-reject);
+            color: var(--brand-text);
+        }
+        .info-card-yellow {
+            border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
+            background: var(--brand-accent-light); border: 1px solid var(--brand-accent);
+            color: var(--brand-text);
+        }
+        .info-card-purple {
+            border-radius: 12px; padding: 16px 18px; margin-bottom: 10px;
+            background: var(--brand-purple-light); border: 1px solid var(--brand-purple);
+            color: var(--brand-text);
+        }
+        .stat-card {
+            border-radius: 12px; padding: 16px 14px; text-align: center;
+            background: rgba(255,255,255,0.02); border: 1px solid;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-card .stat-value { font-size: 1.65rem; font-weight: 700; display: block; margin: 6px 0 2px 0; }
+        .stat-card .stat-label { font-size: 0.82rem; opacity: 0.85; }
+        .nav-card {
+            border-radius: 12px; padding: 14px 16px; margin-bottom: 8px;
+            border: 1px solid; transition: transform 0.15s ease;
+        }
+        .nav-card:hover { transform: translateX(3px); }
+        .nav-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+        .nav-card-desc { font-size: 0.85rem; opacity: 0.85; }
+
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--brand-text); }
-        .block-container { padding-top: 1.6rem; max-width: 1200px; }
+
+        /* Fluid content width: fills whatever space is available (more
+           room when the sidebar is collapsed, less when it's open),
+           capped so it doesn't stretch unreasonably wide on ultra-wide
+           monitors, and never pinned to a fixed 1200px like before. */
+        .block-container {
+            padding-top: 1.6rem;
+            max-width: min(1600px, 96vw);
+            width: 100%;
+            transition: max-width 0.2s ease;
+        }
+
+        /* When the sidebar is collapsed, Streamlit widens the content
+           area's own wrapper automatically — this just raises our cap
+           further so that extra space is actually used rather than
+           left as empty margin. */
+        section[data-testid="stSidebar"][aria-expanded="false"] ~ div .block-container {
+            max-width: min(1800px, 98vw);
+        }
 
         h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; }
         h1 { font-size: 1.85rem; color: var(--brand-primary); }
@@ -450,6 +542,7 @@ def risk_tier(p_approved: float):
 # 4. SIDEBAR — NAVIGATION ONLY
 # ----------------------------------------------------------------------
 PAGES = {
+    "Dashboard": "dashboard",
     "Prediction": "insights",
     "Loan Calculator": "calculate",
     "Batch Prediction": "upload_file",
@@ -465,13 +558,24 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
+    # Apply any pending goto() request BEFORE the radio widget below is
+    # created. Doing this here (rather than inside goto()) is required:
+    # Streamlit forbids writing to a widget's own key after that widget
+    # has been instantiated in the current run, so the write has to
+    # happen on the *next* run, before instantiation.
+    if 'nav_page_request' in st.session_state:
+        st.session_state['nav_page'] = st.session_state.pop('nav_page_request')
+
     # Build labels with inline icons via markdown-rendered radio is not
     # directly supported, so we render icon + text as the option label
     # using unicode-safe plain text (icons shown just above the group).
+    # key="nav_page" lets other pages jump here programmatically via the
+    # goto() helper (buttons like "Go to Loan Calculator").
     page = st.radio(
         "Navigate",
         list(PAGES.keys()),
         label_visibility="collapsed",
+        key="nav_page",
     )
 
 
@@ -485,9 +589,125 @@ st.markdown(
 
 
 # ----------------------------------------------------------------------
-# 6. PAGE: PREDICTION — form now lives in the main content area
+# 6. PAGE: DASHBOARD — landing page with summary stats and quick nav
 # ----------------------------------------------------------------------
-if page == "Prediction":
+if page == "Dashboard":
+    st.caption("A quick overview of the model, your prediction history, and where to go next.")
+
+    # ---- summary stats, colour-coded (teal / purple / yellow / red) ----
+    if os.path.isfile(LOG_FILE):
+        _log_df = pd.read_csv(LOG_FILE)
+        _total = len(_log_df)
+        _approved = int((_log_df['Prediction'] == 'Approved').sum())
+        _rejected = int((_log_df['Prediction'] == 'Rejected').sum())
+        _rate = f"{(_approved / _total * 100):.0f}%" if _total else "—"
+    else:
+        _total, _approved, _rejected, _rate = 0, 0, 0, "—"
+
+    s1, s2, s3, s4 = st.columns(4)
+    with s1:
+        st.markdown(
+            stat_card_html("Applicants Logged", str(_total), "groups", "var(--brand-primary)"),
+            unsafe_allow_html=True
+        )
+    with s2:
+        st.markdown(
+            stat_card_html("Approval Rate", _rate, "trending_up", "var(--brand-purple)"),
+            unsafe_allow_html=True
+        )
+    with s3:
+        st.markdown(
+            stat_card_html("Approved", str(_approved), "check_circle", "var(--brand-accent)"),
+            unsafe_allow_html=True
+        )
+    with s4:
+        st.markdown(
+            stat_card_html("Rejected", str(_rejected), "cancel", "var(--brand-reject)"),
+            unsafe_allow_html=True
+        )
+
+    st.write("")
+
+    # ---- model quick facts strip ----
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('model_training', 20)} Model at a Glance</div>",
+        unsafe_allow_html=True
+    )
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
+        st.markdown(
+            stat_card_html("Accuracy", f"{PERFORMANCE['accuracy']:.0%}", "target", "var(--brand-primary)"),
+            unsafe_allow_html=True
+        )
+    with q2:
+        st.markdown(
+            stat_card_html("F1 Score", f"{PERFORMANCE['f1']:.0%}", "balance", "var(--brand-purple)"),
+            unsafe_allow_html=True
+        )
+    with q3:
+        st.markdown(
+            stat_card_html("Features Used", str(len(INPUTS)), "list_alt", "var(--brand-accent)"),
+            unsafe_allow_html=True
+        )
+    with q4:
+        st.markdown(
+            stat_card_html("Test Set Size", str(PERFORMANCE['test_size']), "science", "var(--brand-reject)"),
+            unsafe_allow_html=True
+        )
+
+    st.divider()
+
+    # ---- quick-nav cards to every section of the app ----
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('explore', 20)} Jump To</div>",
+        unsafe_allow_html=True
+    )
+
+    nav_items = [
+        ("Prediction", "person_search", "var(--brand-primary)", "var(--brand-bg-card)",
+         "Score a Single Applicant",
+         "Fill in one applicant's details and get an instant Approved/Rejected call."),
+        ("Loan Calculator", "calculate", "var(--brand-accent)", "var(--brand-accent-light)",
+         "Structure Loan Terms",
+         "Work out monthly repayments, interest, and a full amortization schedule."),
+        ("Batch Prediction", "upload_file", "var(--brand-purple)", "var(--brand-purple-light)",
+         "Score Many Applicants",
+         "Upload a CSV and get predictions for a whole batch at once."),
+        ("Model Performance", "monitoring", "var(--brand-reject)", "var(--brand-reject-light)",
+         "Check Model Accuracy",
+         "Accuracy, precision/recall, confusion matrix, and baseline comparisons."),
+        ("Model Insights", "insights", "var(--brand-purple)", "var(--brand-purple-light)",
+         "Explore the Sigmoid Curve",
+         "Interactively see how each feature's coefficient shapes predictions."),
+        ("History & Log", "history", "var(--brand-primary)", "var(--brand-bg-card)",
+         "Review Past Predictions",
+         "Every prediction made in this app, with a downloadable CSV log."),
+    ]
+
+    nc1, nc2, nc3 = st.columns(3)
+    nav_cols = [nc1, nc2, nc3]
+    for i, (target, ic, color, bg, title, desc) in enumerate(nav_items):
+        with nav_cols[i % 3]:
+            st.markdown(nav_card_html(title, desc, ic, color, bg), unsafe_allow_html=True)
+            if st.button(f"Open {target}", key=f"dash_nav_{target}", use_container_width=True):
+                goto(target)
+
+    st.divider()
+    st.markdown(
+        f"<div class='info-card-purple'>{icon('school', 16, 'var(--brand-purple)')} "
+        f"New here? Start with <b>Prediction</b> to score an applicant, then visit "
+        f"<b>Model Insights</b> to see why the model made that call."
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
+# ----------------------------------------------------------------------
+# 7. PAGE: PREDICTION — form now lives in the main content area
+# ----------------------------------------------------------------------
+elif page == "Prediction":
     st.caption("Enter the applicant's details below, then click Predict.")
 
     with st.form("customer_form"):
@@ -621,11 +841,23 @@ if page == "Prediction":
 
             if prediction == 1:
                 st.markdown(
-                    f"<div class='info-card'>{icon('arrow_forward', 16, valign='text-bottom')} "
-                    f"Head to <b>Loan Calculator</b> in the sidebar to structure repayment "
-                    f"terms for this applicant.</div>",
+                    f"<div class='info-card-yellow'>{icon('arrow_forward', 16, 'var(--brand-accent)')} "
+                    f"This applicant is approved — structure their repayment terms next."
+                    f"</div>",
                     unsafe_allow_html=True
                 )
+                if st.button("Open Loan Calculator", key="pred_to_calc", use_container_width=True):
+                    goto("Loan Calculator")
+            else:
+                st.markdown(
+                    f"<div class='info-card-purple'>{icon('insights', 16, 'var(--brand-purple)')} "
+                    f"Curious why? Visit <b>Model Insights</b> to see how each feature "
+                    f"pushed this prediction toward Rejected."
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                if st.button("Open Model Insights", key="pred_to_insights", use_container_width=True):
+                    goto("Model Insights")
 
         with right:
             st.markdown(
@@ -1038,11 +1270,21 @@ elif page == "Batch Prediction":
         results_df = st.session_state['batch_results']
         scored = results_df[results_df['Prediction'] != 'Error']
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Scored", len(scored))
-        m2.metric("Approved", (scored['Prediction'] == 'Approved').sum())
-        m3.metric("Rejected", (scored['Prediction'] == 'Rejected').sum())
+        _b_approved = int((scored['Prediction'] == 'Approved').sum())
+        _b_rejected = int((scored['Prediction'] == 'Rejected').sum())
+        _b_rate = f"{(_b_approved / len(scored) * 100):.0f}%" if len(scored) else "—"
 
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.markdown(stat_card_html("Scored", str(len(scored)), "checklist", "var(--brand-primary)"), unsafe_allow_html=True)
+        with m2:
+            st.markdown(stat_card_html("Approved", str(_b_approved), "check_circle", "var(--brand-accent)"), unsafe_allow_html=True)
+        with m3:
+            st.markdown(stat_card_html("Rejected", str(_b_rejected), "cancel", "var(--brand-reject)"), unsafe_allow_html=True)
+        with m4:
+            st.markdown(stat_card_html("Approval Rate", _b_rate, "trending_up", "var(--brand-purple)"), unsafe_allow_html=True)
+
+        st.write("")
         st.dataframe(results_df, hide_index=True, use_container_width=True)
 
         st.download_button(
@@ -1069,11 +1311,28 @@ elif page == "Model Performance":
     )
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Accuracy", f"{PERFORMANCE['accuracy']:.1%}")
-    m2.metric("Precision", f"{PERFORMANCE['precision']:.1%}")
-    m3.metric("Recall", f"{PERFORMANCE['recall']:.1%}")
-    m4.metric("F1 Score", f"{PERFORMANCE['f1']:.1%}")
+    with m1:
+        st.markdown(
+            stat_card_html("Accuracy", f"{PERFORMANCE['accuracy']:.1%}", "target", "var(--brand-primary)"),
+            unsafe_allow_html=True
+        )
+    with m2:
+        st.markdown(
+            stat_card_html("Precision", f"{PERFORMANCE['precision']:.1%}", "gps_fixed", "var(--brand-purple)"),
+            unsafe_allow_html=True
+        )
+    with m3:
+        st.markdown(
+            stat_card_html("Recall", f"{PERFORMANCE['recall']:.1%}", "search", "var(--brand-accent)"),
+            unsafe_allow_html=True
+        )
+    with m4:
+        st.markdown(
+            stat_card_html("F1 Score", f"{PERFORMANCE['f1']:.1%}", "balance", "var(--brand-reject)"),
+            unsafe_allow_html=True
+        )
 
+    st.write("")
     st.caption(
         "Precision/recall/F1 are computed for the **Approved (Y)** class. "
         "Precision: of applicants predicted Approved, how many actually were. "
@@ -1129,6 +1388,16 @@ elif page == "Model Performance":
         hide_index=True,
         use_container_width=True
     )
+
+    st.markdown(
+        f"<div class='info-card-purple'>{icon('lightbulb', 16, 'var(--brand-purple)')} "
+        f"Want to see these weights in action? <b>Model Insights</b> lets you drag each "
+        f"coefficient and watch the predicted probability curve respond in real time."
+        f"</div>",
+        unsafe_allow_html=True
+    )
+    if st.button("Open Model Insights", key="perf_to_insights"):
+        goto("Model Insights")
 
 
 # ----------------------------------------------------------------------
@@ -1266,3 +1535,172 @@ elif page == "Model Insights":
         )
     else:
         st.info("Credit_History is not present in this model's feature set.")
+
+
+# ----------------------------------------------------------------------
+# 11. PAGE: HISTORY & LOG
+# ----------------------------------------------------------------------
+elif page == "History & Log":
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('history', 20)} Prediction History</div>",
+        unsafe_allow_html=True
+    )
+
+    if os.path.isfile(LOG_FILE):
+        log_df = pd.read_csv(LOG_FILE)
+        total = len(log_df)
+        approved = int((log_df['Prediction'] == 'Approved').sum())
+        rejected = int((log_df['Prediction'] == 'Rejected').sum())
+        rate = f"{(approved / total * 100):.0f}%" if total else "—"
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.markdown(stat_card_html("Total Logged", str(total), "database", "var(--brand-primary)"), unsafe_allow_html=True)
+        with m2:
+            st.markdown(stat_card_html("Approved", str(approved), "check_circle", "var(--brand-accent)"), unsafe_allow_html=True)
+        with m3:
+            st.markdown(stat_card_html("Rejected", str(rejected), "cancel", "var(--brand-reject)"), unsafe_allow_html=True)
+        with m4:
+            st.markdown(stat_card_html("Approval Rate", rate, "trending_up", "var(--brand-purple)"), unsafe_allow_html=True)
+
+        st.write("")
+
+        # ---- approval rate over time, so the trend is visible at a glance ----
+        if total >= 2 and 'Timestamp' in log_df.columns:
+            trend_df = log_df.copy()
+            trend_df['Timestamp'] = pd.to_datetime(trend_df['Timestamp'], errors='coerce')
+            trend_df = trend_df.dropna(subset=['Timestamp']).sort_values('Timestamp')
+            trend_df['ApprovedFlag'] = (trend_df['Prediction'] == 'Approved').astype(int)
+            trend_df['RunningApprovalRate'] = trend_df['ApprovedFlag'].expanding().mean() * 100
+
+            st.markdown(
+                f"<div class='section-label'>{icon('show_chart', 18)} Running Approval Rate</div>",
+                unsafe_allow_html=True
+            )
+            st.caption("Cumulative % of logged applicants predicted Approved, in submission order.")
+            st.line_chart(
+                trend_df.set_index('Timestamp')[['RunningApprovalRate']],
+                color="#A78BFA",
+                height=200
+            )
+
+        st.divider()
+        st.dataframe(
+            log_df.sort_values('Timestamp', ascending=False),
+            hide_index=True,
+            use_container_width=True
+        )
+
+        st.download_button(
+            "Download full log as CSV",
+            data=log_df.to_csv(index=False),
+            file_name="customer_loan_predictions_log.csv",
+            mime="text/csv"
+        )
+    else:
+        st.markdown(
+            f"<div class='info-card'>{icon('info', 16)} "
+            f"No predictions logged yet — submit the form on the Prediction page."
+            f"</div>",
+            unsafe_allow_html=True
+        )
+        if st.button("Go make a prediction", key="log_to_pred"):
+            goto("Prediction")
+
+
+# ----------------------------------------------------------------------
+# 12. PAGE: ABOUT
+# ----------------------------------------------------------------------
+elif page == "About":
+    st.markdown(
+        f"<div class='section-label' style='font-size:1.05rem;'>"
+        f"{icon('info', 20)} About This App</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f"<div class='info-card'>"
+        f"{icon('school', 16)} <b>This is an academic / portfolio project, not a real "
+        f"lending decision tool.</b> Predictions and loan terms shown here should not "
+        f"be used to make actual credit or financial decisions."
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    # ---- quick facts strip, colour-coded for scannability ----
+    qf1, qf2, qf3, qf4 = st.columns(4)
+    with qf1:
+        st.markdown(stat_card_html("Algorithm", "Logistic Regression", "functions", "var(--brand-primary)"), unsafe_allow_html=True)
+    with qf2:
+        st.markdown(stat_card_html("Features", str(len(INPUTS)), "list_alt", "var(--brand-purple)"), unsafe_allow_html=True)
+    with qf3:
+        st.markdown(stat_card_html("Test Accuracy", f"{PERFORMANCE['accuracy']:.0%}", "target", "var(--brand-accent)"), unsafe_allow_html=True)
+    with qf4:
+        st.markdown(stat_card_html("Test Set Size", str(PERFORMANCE['test_size']), "science", "var(--brand-reject)"), unsafe_allow_html=True)
+
+    st.write("")
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('model_training', 18)} "
+        f"The Model</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "A **logistic regression** classifier trained on `Loan_Prediction.csv`, predicting "
+        "whether a historical loan application was Approved or Rejected based on applicant "
+        "demographics, income, loan details, and credit history. Categorical features are "
+        "one-hot encoded and numeric features are standardized before fitting; the model "
+        "uses `class_weight='balanced'` to account for class imbalance in the training data. "
+        "See the **Model Performance** page for accuracy, precision/recall, and baseline "
+        "comparisons on a held-out test split."
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('dataset', 18)} "
+        f"The Dataset</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "A standard public loan-eligibility dataset with applicant fields such as gender, "
+        "marital status, dependents, education, employment, income, loan amount and term, "
+        "credit history, and property area. It's a small, historical dataset — patterns "
+        "learned from it reflect that specific data and are not a general statement about "
+        "who should or shouldn't receive credit."
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('warning', 18)} "
+        f"Limitations</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "- Trained on a small, dated, and geographically limited sample — it will not "
+        "generalize reliably to other populations or lending contexts.\n"
+        "- Sensitive attributes like gender and marital status are used as model inputs, "
+        "which would raise fair-lending concerns in any real deployment.\n"
+        "- The loan structuring calculator uses simple/flat interest rules adapted "
+        "from a separate SACCO-style system (FEDHA-SYSTEM) purely for demonstration — "
+        "it is not tied to the prediction model's output.\n"
+        "- No calibration or fairness auditing has been performed beyond the metrics "
+        "shown on the Model Performance page."
+    )
+
+    st.markdown(
+        f"<div class='section-label' style='margin-top:14px;'>{icon('code', 18)} "
+        f"Tech Stack</div>",
+        unsafe_allow_html=True
+    )
+    t1, t2, t3, t4 = st.columns(4)
+    with t1:
+        st.markdown(nav_card_html("Streamlit", "App framework & UI", "web", "var(--brand-primary)", "var(--brand-bg-card)"), unsafe_allow_html=True)
+    with t2:
+        st.markdown(nav_card_html("scikit-learn", "Model training", "psychology", "var(--brand-purple)", "var(--brand-purple-light)"), unsafe_allow_html=True)
+    with t3:
+        st.markdown(nav_card_html("Plotly", "Interactive charts", "show_chart", "var(--brand-accent)", "var(--brand-accent-light)"), unsafe_allow_html=True)
+    with t4:
+        st.markdown(nav_card_html("Pandas / NumPy", "Data processing", "table_chart", "var(--brand-reject)", "var(--brand-reject-light)"), unsafe_allow_html=True)
+
+    st.write("")
+    if st.button("Back to Dashboard", key="about_to_dash", use_container_width=True):
+        goto("Dashboard")
