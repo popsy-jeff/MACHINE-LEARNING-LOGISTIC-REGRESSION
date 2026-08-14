@@ -168,23 +168,26 @@ st.markdown("""
 
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--brand-text); }
 
-        /* Fluid content width: fills whatever space is available (more
-           room when the sidebar is collapsed, less when it's open),
-           capped so it doesn't stretch unreasonably wide on ultra-wide
-           monitors, and never pinned to a fixed 1200px like before. */
+        /* Fluid content width: Streamlit already resizes the content
+           area's parent container correctly when the sidebar is
+           collapsed/expanded — the previous version capped width using
+           vw (viewport) units, which don't reflect that and stayed the
+           same regardless of sidebar state. Using percentages of the
+           actual parent fixes that: the content now genuinely expands
+           to fill the freed-up space when the sidebar is retracted. */
         .block-container {
             padding-top: 1.6rem;
-            max-width: min(1600px, 96vw);
+            padding-left: 3rem;
+            padding-right: 3rem;
+            max-width: 100%;
             width: 100%;
-            transition: max-width 0.2s ease;
         }
 
-        /* When the sidebar is collapsed, Streamlit widens the content
-           area's own wrapper automatically — this just raises our cap
-           further so that extra space is actually used rather than
-           left as empty margin. */
-        section[data-testid="stSidebar"][aria-expanded="false"] ~ div .block-container {
-            max-width: min(1800px, 98vw);
+        /* Keep body text comfortably readable even on very wide screens
+           without capping tables, charts, or dataframes, which should
+           still use the full available width. */
+        .block-container p, .block-container li {
+            max-width: 1100px;
         }
 
         h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 700; }
