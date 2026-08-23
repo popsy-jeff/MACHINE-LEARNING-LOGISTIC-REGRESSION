@@ -6,14 +6,16 @@ Approved/Rejected prediction from your trained logistic regression model,
 plus a loan structuring calculator (interest, repayment schedule) adapted
 from the loan business rules in your FEDHA-SYSTEM project.
 
-HOW TO RUN:
-1. Install streamlit and plotly once (if you don't already have them):
-       pip install streamlit plotly
-2. Place this file in the SAME FOLDER as 'Loan_Prediction.csv'
-   (your LOGISTIC REGRESSION project folder).
-3. From that folder, run:
-       streamlit run loan_prediction_app.py
-   Or double-click run_app.bat.
+HOW TO RUN — pick whichever is easiest for you:
+1. Terminal:  streamlit run loan_prediction_app.py
+2. Double-click run_app.bat — no terminal typing needed.
+3. VS Code's plain Run button (▷ / "Run Python File"): also works now —
+   this file detects it's being run as a bare script and relaunches
+   itself through Streamlit automatically (see the block right after
+   the imports below).
+
+Install streamlit and plotly once (if you don't already have them):
+    pip install streamlit plotly
 
 LAYOUT:
 The sidebar is navigation ONLY (page switcher). All forms — applicant
@@ -31,6 +33,7 @@ Material UI) loaded from Google Fonts' CDN — no emoji anywhere in the UI.
 """
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -39,11 +42,63 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 
+# ----------------------------------------------------------------------
+# Let VS Code's plain "Run Python File" button (▷) work on this file.
+# That button executes `python loan_prediction_app.py` directly, which
+# Streamlit apps can't run under — they need to be started via the
+# `streamlit run` command so Streamlit's server/runtime is set up first.
+#
+# st.runtime.exists() tells us whether we're already inside that
+# runtime. If we're NOT (i.e. this file was just run as a bare script),
+# we relaunch this exact same file properly through Streamlit and stop
+# the original bare-python process. When launched correctly — via
+# `streamlit run`, run_app.bat, or this relaunch itself — the check
+# below is a no-op and the app continues as normal.
+# ----------------------------------------------------------------------
+if not st.runtime.exists():
+    from streamlit.web import cli as stcli
+    sys.argv = ["streamlit", "run", os.path.abspath(__file__)]
+    sys.exit(stcli.main())
+
 # Always work relative to THIS file's own folder, regardless of where the
 # app is launched from (terminal, VS Code Run button, double-click, etc.)
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(APP_DIR)
 
 LOG_FILE = 'customer_loan_predictions_log.csv'
+
+# ----------------------------------------------------------------------
+# Locate the dataset even when it isn't sitting next to this script.
+# Your project layout has the CSV in a sibling "Training Datasets"
+# folder (e.g. .../Model Apps/loan_prediction_app.py and
+# .../Training Datasets/Loan_Prediction.csv both under the same parent
+# folder), so we check a few likely spots instead of assuming they're
+# identical.
+# ----------------------------------------------------------------------
+DATA_FILENAME = 'Loan_Prediction.csv'
+_CANDIDATE_DATA_PATHS = [
+    os.path.join(APP_DIR, DATA_FILENAME),                                        # same folder as the app
+    os.path.join(APP_DIR, '..', 'Training Datasets', DATA_FILENAME),             # sibling "Training Datasets" folder
+    os.path.join(APP_DIR, 'Training Datasets', DATA_FILENAME),                   # "Training Datasets" nested under the app folder
+    os.path.join(APP_DIR, '..', 'Notebooks', DATA_FILENAME),                     # sibling "Notebooks" folder (fallback)
+    os.path.join(APP_DIR, '..', DATA_FILENAME),                                  # one level up
+]
+
+
+def find_data_path() -> str:
+    for candidate in _CANDIDATE_DATA_PATHS:
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    # Nothing found — fail with a clear message instead of a cryptic
+    # FileNotFoundError deep inside pandas.
+    searched = "\n".join(f"  - {os.path.abspath(p)}" for p in _CANDIDATE_DATA_PATHS)
+    st.error(
+        f"Couldn't find **{DATA_FILENAME}**. Looked in:\n\n{searched}\n\n"
+        f"Either move the CSV into one of these folders, or edit "
+        f"`_CANDIDATE_DATA_PATHS` near the top of this file to add its actual location."
+    )
+    st.stop()
+
 
 # Must match loan_prediction_gui.py's LOG_COLUMNS exactly.
 LOG_COLUMNS = [
@@ -320,7 +375,7 @@ st.markdown("""
 # ----------------------------------------------------------------------
 @st.cache_resource
 def build_model():
-    loan_df = pd.read_csv('Loan_Prediction.csv')
+    loan_df = pd.read_csv(find_data_path())
 
     loan_df['LoanAmount'] = loan_df['LoanAmount'].fillna(loan_df['LoanAmount'].median())
     loan_df['Loan_Amount_Term'] = loan_df['Loan_Amount_Term'].fillna(loan_df['Loan_Amount_Term'].median())
