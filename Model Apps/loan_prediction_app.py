@@ -161,6 +161,18 @@ def goto(page_name: str):
     st.rerun()
 
 
+# Plotly charts render in their own iframe and can't see this page's CSS
+# custom properties (var(--brand-...)), so anywhere a chart needs one of
+# our brand colors we look up the real hex value here instead.
+BRAND_HEX = {
+    'var(--brand-primary)': '#2FBF8F',
+    'var(--brand-approve)': '#3FD08A',
+    'var(--brand-accent)':  '#E0B75C',
+    'var(--brand-reject)':  '#F2685C',
+    'var(--brand-purple)':  '#A78BFA',
+}
+
+
 # ----------------------------------------------------------------------
 # GLOBAL STYLE
 # ----------------------------------------------------------------------
@@ -208,18 +220,11 @@ st.markdown("""
         .stat-card {
             border-radius: 12px; padding: 16px 14px; text-align: center;
             background: rgba(255,255,255,0.02); border: 1px solid;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
         }
-        .stat-card:hover { transform: translateY(-2px); }
-        .stat-card .stat-value { font-size: 1.65rem; font-weight: 700; display: block; margin: 6px 0 2px 0; }
-        .stat-card .stat-label { font-size: 0.82rem; opacity: 0.85; }
         .nav-card {
             border-radius: 12px; padding: 14px 16px; margin-bottom: 8px;
-            border: 1px solid; transition: transform 0.15s ease;
+            border: 1px solid;
         }
-        .nav-card:hover { transform: translateX(3px); }
-        .nav-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
-        .nav-card-desc { font-size: 0.85rem; opacity: 0.85; }
 
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--brand-text); }
 
@@ -365,6 +370,116 @@ st.markdown("""
             font-size: 1.15rem; padding: 10px 6px 16px 6px;
             margin-bottom: 8px;
             border-bottom: 1px solid var(--brand-border);
+        }
+
+        /* ================================================================
+           COMPREHENSIVE UI UPGRADE
+           Gradient typography, a hero banner, richer/animated cards,
+           gradient buttons, a custom scrollbar, and mobile-first
+           responsive breakpoints.
+           ================================================================ */
+
+        /* Gradient headline text instead of flat teal */
+        h1 {
+            font-size: 1.9rem;
+            background: linear-gradient(120deg, var(--brand-primary) 0%, var(--brand-purple) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
+        }
+        /* the icon inside h1 shouldn't inherit the transparent text fill */
+        h1 .material-symbols-outlined { -webkit-text-fill-color: initial; }
+
+        /* Hero banner — soft gradient panel used at the top of the Dashboard */
+        .hero-banner {
+            border-radius: 18px;
+            padding: 28px 32px;
+            margin-bottom: 18px;
+            background: linear-gradient(135deg, rgba(47,191,143,0.16) 0%, rgba(167,139,250,0.12) 100%);
+            border: 1px solid var(--brand-border);
+            position: relative;
+            overflow: hidden;
+            animation: fadeSlideIn 0.5s ease-out;
+        }
+        .hero-banner::after {
+            content: "";
+            position: absolute; top: -60%; right: -10%;
+            width: 260px; height: 260px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(167,139,250,0.25), transparent 70%);
+            pointer-events: none;
+        }
+        .hero-title { font-size: 1.5rem; font-weight: 700; color: var(--brand-text); margin-bottom: 4px; }
+        .hero-sub { font-size: 0.95rem; opacity: 0.85; max-width: 640px; }
+
+        /* Richer, animated stat / nav / info cards */
+        .stat-card {
+            border-radius: 14px; padding: 18px 14px; text-align: center;
+            background: linear-gradient(160deg, rgba(255,255,255,0.045), rgba(255,255,255,0.01));
+            border: 1px solid; box-shadow: 0 2px 14px rgba(0,0,0,0.22);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            animation: fadeSlideIn 0.45s ease-out;
+        }
+        .stat-card:hover { transform: translateY(-3px) scale(1.01); box-shadow: 0 8px 22px rgba(0,0,0,0.32); }
+        .stat-card .stat-value { font-size: 1.7rem; font-weight: 700; display: block; margin: 6px 0 2px 0; }
+        .stat-card .stat-label { font-size: 0.82rem; opacity: 0.85; }
+
+        .nav-card {
+            border-radius: 14px; padding: 15px 17px; margin-bottom: 8px;
+            border: 1px solid; box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            animation: fadeSlideIn 0.5s ease-out;
+        }
+        .nav-card:hover { transform: translateX(4px) translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
+        .nav-card-title { font-weight: 600; font-size: 1rem; margin-bottom: 2px; }
+        .nav-card-desc { font-size: 0.85rem; opacity: 0.85; }
+
+        .info-card, .info-card-red, .info-card-yellow, .info-card-purple {
+            animation: fadeSlideIn 0.4s ease-out;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+        }
+
+        /* Gentle pulse for the approved status pill, once on load */
+        @keyframes softPulse {
+            0%   { box-shadow: 0 0 0 0 rgba(63,208,138,0.45); }
+            70%  { box-shadow: 0 0 0 10px rgba(63,208,138,0); }
+            100% { box-shadow: 0 0 0 0 rgba(63,208,138,0); }
+        }
+        .status-approved { animation: fadeSlideIn 0.45s ease-out, softPulse 1.8s ease-out 1; }
+
+        /* Gradient primary buttons with a soft glow */
+        button[kind="primary"], button[kind="formSubmit"] {
+            background: linear-gradient(135deg, var(--brand-primary) 0%, #22997A 100%) !important;
+            box-shadow: 0 3px 14px rgba(47, 191, 143, 0.28);
+        }
+        button[kind="primary"]:hover, button[kind="formSubmit"]:hover {
+            box-shadow: 0 6px 20px rgba(47, 191, 143, 0.42);
+        }
+
+        /* Custom scrollbar so dataframes/tables feel native to the theme */
+        ::-webkit-scrollbar { height: 9px; width: 9px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb { background: var(--brand-primary); border-radius: 8px; opacity: 0.6; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--brand-purple); }
+
+        /* ---- Mobile-first responsive breakpoints ---- */
+        @media (max-width: 768px) {
+            .block-container { padding-left: 1.25rem; padding-right: 1.25rem; padding-top: 1rem; }
+            h1 { font-size: 1.5rem; }
+            .hero-banner { padding: 20px 18px; }
+            .hero-title { font-size: 1.2rem; }
+            .hero-sub { font-size: 0.85rem; }
+            .stat-card { padding: 13px 10px; }
+            .stat-card .stat-value { font-size: 1.35rem; }
+            .stat-card .stat-label { font-size: 0.72rem; }
+            .nav-card { padding: 12px 13px; }
+            .nav-card-title { font-size: 0.92rem; }
+            .nav-card-desc { font-size: 0.78rem; }
+            .status-pill { font-size: 0.9rem; padding: 6px 12px; }
+        }
+        @media (max-width: 480px) {
+            .block-container { padding-left: 0.85rem; padding-right: 0.85rem; }
+            h1 { font-size: 1.25rem; }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -638,12 +753,24 @@ with st.sidebar:
 
 
 # ----------------------------------------------------------------------
-# 5. HEADER (shown on every page)
+# 5. HEADER (shown on every page) — a rich hero banner on the Dashboard,
+#    a compact gradient title everywhere else so pages stay content-first.
 # ----------------------------------------------------------------------
-st.markdown(
-    f"<h1>{icon('account_balance', 30, 'var(--brand-primary)')} Loan Approval Predictor</h1>",
-    unsafe_allow_html=True
-)
+if page == "Dashboard":
+    st.markdown(
+        f"<div class='hero-banner'>"
+        f"<div class='hero-title'>{icon('account_balance', 26, 'var(--brand-primary)')} "
+        f"Loan Approval Predictor</div>"
+        f"<div class='hero-sub'>Score applicants instantly, structure repayment terms, and "
+        f"see exactly what's driving every decision — powered by a logistic regression model "
+        f"trained on real loan outcomes.</div></div>",
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        f"<h1>{icon('account_balance', 26, 'var(--brand-primary)')} Loan Approval Predictor</h1>",
+        unsafe_allow_html=True
+    )
 
 
 # ----------------------------------------------------------------------
@@ -683,6 +810,36 @@ if page == "Dashboard":
             stat_card_html("Rejected", str(_rejected), "cancel", "var(--brand-reject)"),
             unsafe_allow_html=True
         )
+
+    # ---- donut chart: Approved vs Rejected split at a glance ----
+    if _total > 0:
+        st.write("")
+        donut_fig = go.Figure(go.Pie(
+            labels=["Approved", "Rejected"],
+            values=[_approved, _rejected],
+            hole=0.68,
+            marker=dict(colors=[BRAND_HEX['var(--brand-accent)'], BRAND_HEX['var(--brand-reject)']],
+                        line=dict(color='#0B100E', width=2)),
+            textinfo='percent',
+            textfont=dict(color='#0E1512', size=13),
+            hovertemplate='%{label}: %{value} applicants<extra></extra>',
+        ))
+        donut_fig.update_layout(
+            height=220, margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='rgba(0,0,0,0)', font_color='#EAEFEC',
+            showlegend=True, legend=dict(orientation='h', yanchor='bottom', y=-0.15, x=0.22),
+            annotations=[dict(text=f"{_total}<br>total", x=0.5, y=0.5, font=dict(size=16, color='#EAEFEC'), showarrow=False)],
+        )
+        dc1, dc2 = st.columns([1, 2])
+        with dc1:
+            st.plotly_chart(donut_fig, use_container_width=True, config={'displayModeBar': False})
+        with dc2:
+            st.markdown(
+                f"<div class='info-card-purple' style='margin-top:30px;'>{icon('donut_large', 16, 'var(--brand-purple)')} "
+                f"<b>{_rate}</b> of logged applicants were predicted Approved. Head to "
+                f"<b>History & Log</b> for the full breakdown and a trend over time."
+                f"</div>", unsafe_allow_html=True
+            )
 
     st.write("")
 
@@ -870,7 +1027,30 @@ elif page == "Prediction":
             m1, m2 = st.columns(2)
             m1.metric("P(Rejected)", f"{proba[0]:.1%}")
             m2.metric("P(Approved)", f"{proba[1]:.1%}")
-            st.progress(float(proba[1]), text="Approval confidence")
+
+            gauge_color = BRAND_HEX.get(tier_color, '#2FBF8F')
+            gauge_fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=float(proba[1]) * 100,
+                number={'suffix': '%', 'font': {'size': 30, 'color': gauge_color}},
+                gauge={
+                    'axis': {'range': [0, 100], 'tickcolor': '#8A928E', 'tickwidth': 1},
+                    'bar': {'color': gauge_color, 'thickness': 0.32},
+                    'bgcolor': 'rgba(255,255,255,0.04)',
+                    'borderwidth': 0,
+                    'steps': [
+                        {'range': [0, 30], 'color': 'rgba(242,104,92,0.16)'},
+                        {'range': [30, 70], 'color': 'rgba(224,183,92,0.16)'},
+                        {'range': [70, 100], 'color': 'rgba(63,208,138,0.16)'},
+                    ],
+                    'threshold': {'line': {'color': gauge_color, 'width': 3}, 'thickness': 0.85, 'value': float(proba[1]) * 100},
+                },
+            ))
+            gauge_fig.update_layout(
+                height=190, margin=dict(l=20, r=20, t=15, b=5),
+                paper_bgcolor='rgba(0,0,0,0)', font_color='#EAEFEC'
+            )
+            st.plotly_chart(gauge_fig, use_container_width=True, config={'displayModeBar': False})
             st.caption(
                 "Risk tier: **Low** ≥ 70% approval confidence · "
                 "**Medium** 30–70% · **High** < 30%."
@@ -1516,7 +1696,8 @@ elif page == "Model Insights":
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=x, y=y, mode='lines', name='Sigmoid',
-        line=dict(width=3, color='#2FBF8F')
+        line=dict(width=3, color='#2FBF8F'),
+        fill='tozeroy', fillcolor='rgba(47,191,143,0.14)'
     ))
     fig.add_hline(y=0.5, line_dash="dash", line_color="gray",
                   annotation_text="Decision threshold (0.5)")
@@ -1624,7 +1805,26 @@ elif page == "History & Log":
 
         st.write("")
 
+        # ---- donut chart: overall Approved/Rejected split ----
+        donut_fig = go.Figure(go.Pie(
+            labels=["Approved", "Rejected"],
+            values=[approved, rejected],
+            hole=0.68,
+            marker=dict(colors=[BRAND_HEX['var(--brand-accent)'], BRAND_HEX['var(--brand-reject)']],
+                        line=dict(color='#0B100E', width=2)),
+            textinfo='percent',
+            textfont=dict(color='#0E1512', size=13),
+            hovertemplate='%{label}: %{value} applicants<extra></extra>',
+        ))
+        donut_fig.update_layout(
+            height=230, margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='rgba(0,0,0,0)', font_color='#EAEFEC',
+            showlegend=True, legend=dict(orientation='h', yanchor='bottom', y=-0.15, x=0.22),
+            annotations=[dict(text=f"{total}<br>total", x=0.5, y=0.5, font=dict(size=15, color='#EAEFEC'), showarrow=False)],
+        )
+
         # ---- approval rate over time, so the trend is visible at a glance ----
+        trend_fig = None
         if total >= 2 and 'Timestamp' in log_df.columns:
             trend_df = log_df.copy()
             trend_df['Timestamp'] = pd.to_datetime(trend_df['Timestamp'], errors='coerce')
@@ -1632,16 +1832,33 @@ elif page == "History & Log":
             trend_df['ApprovedFlag'] = (trend_df['Prediction'] == 'Approved').astype(int)
             trend_df['RunningApprovalRate'] = trend_df['ApprovedFlag'].expanding().mean() * 100
 
-            st.markdown(
-                f"<div class='section-label'>{icon('show_chart', 18)} Running Approval Rate</div>",
-                unsafe_allow_html=True
+            trend_fig = go.Figure(go.Scatter(
+                x=trend_df['Timestamp'], y=trend_df['RunningApprovalRate'],
+                mode='lines', line=dict(width=3, color=BRAND_HEX['var(--brand-purple)']),
+                fill='tozeroy', fillcolor='rgba(167,139,250,0.18)',
+                hovertemplate='%{y:.0f}%% approved as of %{x}<extra></extra>',
+            ))
+            trend_fig.update_layout(
+                height=230, margin=dict(l=10, r=10, t=30, b=10),
+                title=dict(text="Running Approval Rate", font=dict(size=14, color='#EAEFEC')),
+                xaxis_title=None, yaxis_title="% Approved", yaxis_range=[0, 100],
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='#EAEFEC'
             )
-            st.caption("Cumulative % of logged applicants predicted Approved, in submission order.")
-            st.line_chart(
-                trend_df.set_index('Timestamp')[['RunningApprovalRate']],
-                color="#A78BFA",
-                height=200
-            )
+
+        pc1, pc2 = st.columns([1, 1.4])
+        with pc1:
+            st.markdown(f"<div class='section-label'>{icon('donut_large', 18)} Overall Split</div>", unsafe_allow_html=True)
+            st.plotly_chart(donut_fig, use_container_width=True, config={'displayModeBar': False})
+        with pc2:
+            if trend_fig is not None:
+                st.markdown(f"<div class='section-label'>{icon('show_chart', 18)} Approval Trend</div>", unsafe_allow_html=True)
+                st.caption("Cumulative % of logged applicants predicted Approved, in submission order.")
+                st.plotly_chart(trend_fig, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.markdown(
+                    f"<div class='info-card'>{icon('info', 16)} Log at least 2 predictions to see a trend line here.</div>",
+                    unsafe_allow_html=True
+                )
 
         st.divider()
         st.dataframe(
