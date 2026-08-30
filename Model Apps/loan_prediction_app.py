@@ -1000,8 +1000,6 @@ elif page == "Prediction":
         left, right = st.columns([1.15, 1], gap="large")
 
         with left:
-            st.markdown('<div class="result-block">', unsafe_allow_html=True)
-
             if prediction == 1:
                 st.markdown(
                     f'<span class="status-pill status-approved">'
@@ -1075,7 +1073,6 @@ elif page == "Prediction":
                 f"</div>",
                 unsafe_allow_html=True
             )
-            st.markdown('</div>', unsafe_allow_html=True)
 
             if prediction == 1:
                 st.markdown(
