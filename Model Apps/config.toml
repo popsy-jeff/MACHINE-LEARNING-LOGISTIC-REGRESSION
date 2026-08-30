@@ -1,0 +1,18 @@
+# Forces Streamlit's own base theme to dark, matching the app's custom CSS.
+#
+# Without this file, Streamlit defaults to its light base theme. The
+# custom CSS in loan_prediction_app.py only re-themes specific elements
+# it explicitly targets (sidebar, cards, metrics, buttons) — it never
+# sets a background color on the page canvas itself, and assumes native,
+# un-targeted widgets (text/number inputs, selectboxes, dataframes, the
+# top toolbar, expanders, dividers) are already dark via Streamlit's own
+# theme. On a fresh clone with no config.toml, those widgets stay light
+# while the custom CSS forces everything else dark — producing the
+# clashing, "distorted" mixed light/dark interface.
+[theme]
+base = "dark"
+primaryColor = "#2FBF8F"
+backgroundColor = "#0B100E"
+secondaryBackgroundColor = "#141A18"
+textColor = "#EAEFEC"
+font = "sans serif"
