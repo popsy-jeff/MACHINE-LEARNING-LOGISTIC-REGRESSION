@@ -228,6 +228,31 @@ st.markdown("""
 
         html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--brand-text); }
 
+        /* Force the main content canvas dark directly, rather than relying
+           solely on .streamlit/config.toml's [theme] base="dark". Two
+           real-world cases make the config file alone unreliable:
+           1. Streamlit only reads .streamlit/config.toml from the CURRENT
+              WORKING DIRECTORY the `streamlit run` command was launched
+              from — if that's the repo root instead of "Model Apps/"
+              (e.g. `streamlit run "Model Apps/loan_prediction_app.py"`
+              from one level up), the config file silently isn't found.
+           2. Streamlit remembers a user's manually-picked theme (via the
+              ⋮ menu → Settings) in the BROWSER, which overrides the
+              config.toml default on later visits even after this file
+              is added.
+           Setting these backgrounds here means the main content area is
+           dark regardless of either case. */
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"],
+        [data-testid="stBottomBlockContainer"],
+        .main {
+            background-color: #0B100E !important;
+        }
+        [data-testid="stHeader"] {
+            background-color: rgba(0, 0, 0, 0) !important;
+        }
+
         /* Fluid content width: Streamlit already resizes the content
            area's parent container correctly when the sidebar is
            collapsed/expanded — the previous version capped width using
