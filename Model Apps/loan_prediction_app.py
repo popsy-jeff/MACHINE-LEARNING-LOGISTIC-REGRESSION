@@ -253,6 +253,63 @@ st.markdown("""
             background-color: rgba(0, 0, 0, 0) !important;
         }
 
+        /* Force text color on Streamlit's OWN native text elements —
+           plain markdown prose, captions, widget labels, metrics,
+           dataframes, expanders, headings. Forcing the background dark
+           (above) without this left plenty of native text at whatever
+           color Streamlit's own (possibly still-light) theme gave it,
+           which reads as invisible/near-invisible against the new dark
+           background. Scoped to p/li/label/testid-specific selectors
+           rather than a blanket `*` rule, so it never touches the
+           deliberately inline-colored <span> icons, stat values, or
+           status pills used throughout the custom HTML cards. */
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] strong,
+        [data-testid="stMarkdownContainer"] em,
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p,
+        [data-testid="stWidgetLabel"] p,
+        [data-testid="stWidgetLabel"] label,
+        [data-testid="stMetricLabel"],
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricDelta"],
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] summary p,
+        [data-testid="stExpander"] p,
+        [data-testid="stExpander"] li,
+        [data-testid="stDataFrame"],
+        section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p,
+        h2, h3, h4, h5, h6,
+        label, p, li {
+            color: var(--brand-text) !important;
+        }
+        h1 { color: var(--brand-text); } /* fallback for browsers without background-clip:text support; the gradient rule further below still applies on top */
+
+        /* Secondary (default, non-primary) buttons — nav/back/download
+           buttons throughout the app — explicitly dark-styled so they
+           stay legible no matter which base theme actually resolved. */
+        button[kind="secondary"] {
+            background-color: var(--brand-bg-card) !important;
+            color: var(--brand-text) !important;
+            border: 1px solid var(--brand-border) !important;
+        }
+        button[kind="secondary"]:hover {
+            background-color: var(--brand-primary-light) !important;
+            border-color: var(--brand-primary) !important;
+        }
+
+        /* Native text/number inputs and selects */
+        input, textarea,
+        div[data-baseweb="select"] > div {
+            background-color: var(--brand-bg-card) !important;
+            color: var(--brand-text) !important;
+            border-color: var(--brand-border) !important;
+        }
+        div[data-baseweb="select"] span { color: var(--brand-text) !important; }
+        div[data-baseweb="popover"] { background-color: #141A18 !important; }
+        div[data-baseweb="popover"] li { color: var(--brand-text) !important; }
+
         /* Fluid content width: Streamlit already resizes the content
            area's parent container correctly when the sidebar is
            collapsed/expanded — the previous version capped width using
